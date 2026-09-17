@@ -5,9 +5,12 @@ from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import Dispatcher, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, JobQueue
 from bot import *
-from config import BOT_TOKEN
+from config import BOT_TOKEN, PHONE_API_NEW
 import logging
 from datetime import datetime, timedelta
+import threading
+import time
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,22 @@ job_queue = JobQueue()
 job_queue.set_dispatcher(dispatcher)
 dispatcher.job_queue = job_queue
 job_queue.start()
+
+# ---------- 🔥 API WARMUP (Render ko sone se bachane ke liye) ----------
+def keep_api_warm():
+    """हर 10 सेकंड में API को कॉल करके जगाए रखें"""
+    warmup_url = PHONE_API_NEW.format(num="9999999999")
+    while True:
+        try:
+            resp = requests.get(warmup_url, timeout=60)
+            logger.info(f"🔥 API warmup status: {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"⚠️ API warmup failed: {e}")
+        time.sleep(10)  # 10 सेकंड
+
+# बैकग्राउंड थ्रेड में warmup शुरू करें
+threading.Thread(target=keep_api_warm, daemon=True).start()
+logger.info("🔥 API warmup thread started.")
 
 # ---------- Premium Reminder Scheduler ----------
 def schedule_daily_reminders():
