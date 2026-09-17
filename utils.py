@@ -252,7 +252,7 @@ def fetch_phone_info(phone_number):
         return []
 
     except requests.exceptions.Timeout:
-        logger.warning(f"⏱️ API timeout for {phone_number} (10s)")
+        logger.warning(f"⏱️ API timeout for {phone_number} (45s)")
         return []
     except requests.exceptions.ConnectionError:
         logger.warning(f"🔌 API connection error for {phone_number}")
