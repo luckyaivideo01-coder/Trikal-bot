@@ -28,6 +28,7 @@ def format_address(address):
     """Format address by removing duplicates and extra spaces."""
     if not address or address == 'N/A':
         return 'N/A'
+    # नए API में '!' का इस्तेमाल सेपरेटर के तौर पर हुआ है, उसे स्पेस से बदल दें
     address = str(address).replace('!', ' ')
     address = re.sub(r'\s+', ' ', address.strip())
     words = address.split()
@@ -51,6 +52,11 @@ def create_search_result_file(result_text, query, search_type, bot_username):
 
 # ---------- fetch_phone_info: AUTO-DETECT ALL API FORMATS ----------
 def fetch_phone_info(phone_number):
+    """
+    Fetch phone details from API. 
+    Auto-detects multiple API formats (New & Old) so code doesn't need changing in future.
+    Timeout set to 10 seconds.
+    """
     url = PHONE_API_NEW.format(num=phone_number)
     try:
         resp = requests.get(url, timeout=10)
@@ -66,21 +72,28 @@ def fetch_phone_info(phone_number):
         if data.get('success') is True and 'results' in data:
             results = data['results']
             all_records = []
+            
             for rec in results:
                 normalized = {}
+                
                 if rec.get('name'): normalized['name'] = str(rec['name'])
                 if rec.get('fathersName'): normalized['father_name'] = str(rec['fathersName'])
                 if rec.get('address'): normalized['address'] = str(rec['address'])
                 if rec.get('phoneNumber'): normalized['mobile'] = normalize_phone_number(rec['phoneNumber'])
+                
                 if rec.get('otherNumber'):
                     alt = normalize_phone_number(rec['otherNumber'])
                     if alt and alt != normalized.get('mobile'):
                         normalized['alternate_number'] = alt
+                
                 if rec.get('aadharNumber'): normalized['id'] = str(rec['aadharNumber'])
+                
                 if rec.get('district'): normalized['circle'] = str(rec['district'])
                 elif rec.get('state'): normalized['circle'] = str(rec['state'])
+                
                 if normalized: all_records.append(normalized)
 
+            # Deduplication for new API format
             seen = set()
             unique_records = []
             for rec in all_records:
@@ -88,6 +101,7 @@ def fetch_phone_info(phone_number):
                 if key not in seen:
                     seen.add(key)
                     unique_records.append(rec)
+            
             if unique_records:
                 logger.info(f"✅ Detected New API Format for {phone_number}")
                 return unique_records
@@ -117,9 +131,35 @@ def fetch_phone_info(phone_number):
                                 if rec.get('Region'): normalized['circle'] = str(rec['Region'])
                                 if rec.get('DocumentNumber'): normalized['id'] = str(rec['DocumentNumber'])
                                 if normalized: all_records.append(normalized)
+            
             if all_records:
                 logger.info(f"✅ Detected Old 'New' API Format for {phone_number}")
                 return all_records
+
+        # =================================================================
+        # ========== FORMAT 7: ASTHA API FORMAT (status: success, data: dict with mobile/name) ==========
+        # =================================================================
+        if data.get('status') == 'success' and 'data' in data and isinstance(data['data'], dict):
+            rec = data['data']
+            # चेक करें कि यह Astha फॉर्मेट है (mobile या name डायरेक्ट data में है)
+            if 'mobile' in rec or 'name' in rec:
+                normalized = {}
+                if rec.get('name'): normalized['name'] = str(rec['name'])
+                if rec.get('fname'): normalized['father_name'] = str(rec['fname'])
+                if rec.get('address'): normalized['address'] = str(rec['address'])
+                if rec.get('mobile'): 
+                    normalized['mobile'] = normalize_phone_number(rec['mobile'])
+                if rec.get('alt'):
+                    alt = normalize_phone_number(rec['alt'])
+                    if alt and alt != normalized.get('mobile'):
+                        normalized['alternate_number'] = alt
+                if rec.get('circle'): normalized['circle'] = str(rec['circle'])
+                if rec.get('id'): normalized['id'] = str(rec['id'])
+                if rec.get('email'): normalized['email'] = str(rec['email'])
+                
+                if normalized:
+                    logger.info(f"✅ Detected Astha API Format for {phone_number}")
+                    return [normalized]
 
         # =================================================================
         # ========== FORMAT 3: OLD API FORMAT (status: success, data: subscriber) ==========
@@ -174,11 +214,11 @@ def fetch_phone_info(phone_number):
                         continue
                     normalized = {}
                     name_fields = ['name', 'fullName', 'FullName', 'full_name']
-                    father_fields = ['fathersName', 'fatherName', 'FatherName', 'father_name']
+                    father_fields = ['fathersName', 'fatherName', 'FatherName', 'father_name', 'fname']
                     mobile_fields = ['phoneNumber', 'mobile', 'Phone', 'phone', 'phone_number']
                     address_fields = ['address', 'Adres', 'Adres2', 'Address']
                     id_fields = ['aadharNumber', 'id', 'DocumentNumber', 'aadhar', 'id_number']
-                    alt_fields = ['otherNumber', 'alternate_number', 'Phone2', 'alternate']
+                    alt_fields = ['otherNumber', 'alternate_number', 'Phone2', 'alternate', 'alt']
                     for f in name_fields:
                         if rec.get(f): normalized['name'] = str(rec[f]); break
                     for f in father_fields:
